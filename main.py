@@ -1,4 +1,5 @@
 # *************系统自带的库*****************
+import datetime
 from time import sleep
 import logging
 
@@ -33,12 +34,12 @@ def main():
             if len(dic_ip_last) > 0:    # 若存在需要进行最后一次采集的项目
                 data_to_database_last = daq.data_collection(dic_ip_last)  # 刚刚到期的项目，进行最后一次采集
             if len(dic_plc_reset) > 0:  # 若存在需要对PLC置零复位的项目
-                daq.plc_reset(dic_plc_reset)  
-            data_to_database_now = daq.data_collection(dic_ip_now)  # 采集正在生产的项目
+                daq.plc_reset(dic_plc_reset)
+            if len(dic_ip_now) > 0:  # 如果当前存在正在生产的项目
+                data_to_database_now = daq.data_collection(dic_ip_now)  # 采集正在生产的项目
             daq.data_save(data_to_database_last, data_to_database_now)  # 存储数据
+            print(datetime.datetime.now())
             print("*" * 16,'本次采集结束',"*" * 16)
-
-            sleep(600)  # 10分钟采集一次
         except KeyboardInterrupt:
             print("按下了CTRL+C，正常关闭程序")
             logging.info('按下了CTRL+C，正常关闭程序')
@@ -48,6 +49,11 @@ def main():
             logging.error(str(e))
             # stop = True
             daq.send_email(str(e))
+        
+        data_to_database_last.clear()
+        data_to_database_now.clear()
+            
+        sleep(600)  # 10分钟采集一次
 
 
 if __name__ == "__main__":

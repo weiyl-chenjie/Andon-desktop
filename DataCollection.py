@@ -31,7 +31,7 @@ class DataCollection:
         self.database = "ytwebserver"
         self.user = "ytwebserver"
         self.password = "it-profi"
-        self.host = 'localhost'
+        self.host = '192.168.0.4'
         self.port = "5432"
 
     def __get_connect(self):
@@ -60,7 +60,7 @@ class DataCollection:
     # 连接PLC失败时，调用此函数发送邮件至相关人员
     def plc_connect_failed(self, values):
         print('进入plc_connect_failed')
-        logging.info('进入plc_connect_failed')
+        logging.info('进入plc_connect_failed' + str(values))
         message = ''  # 要发送的邮件数据
         l = len(values)
         # 获取SQL搜索条件
@@ -79,10 +79,9 @@ class DataCollection:
     # 查寻此时此刻正在生产的所有项目
     def find_mps(self):
         print("进入find_mps")
-        logging.info('进入find_mps')
         dic_id = {}  # 存储此时此刻生产中的项目(key:value对应andon_mps.id:andon_menu.id)
-        dic_ip_menu = {}  # 存储dic_id中andon_menu.id对应的PLC的ip(key:value对应andon_menu.id:andon_menu.id)
-        dic_ip_mps = {}  # 存储dic_id中andon_mps.id对应的PLC的ip(key:value对应andon_mps.id:andon_menu.id)
+        dic_ip_menu = {}  # 存储dic_id中andon_menu.id对应的PLC的ip(key:value对应andon_menu.id:andon_menu.ip)
+        dic_ip_mps = {}  # 存储dic_id中andon_mps.id对应的PLC的ip(key:value对应andon_mps.id:andon_menu.ip)
         dic_ip_now = {}  # 存储dic_ip_mps去重后的项目 
         list_items = []  # 存储所有项目的名称
         list_items_duplicate = []  # 存储list_items中PLC的ip重复的项
@@ -100,7 +99,7 @@ class DataCollection:
         
         # 获取所有正在生产的项目的id（key:value对应andon_mps.id:andon_menu.id）
         dic_id = {x[0]: x[1] for x in rows}
-        # print("满足当前条件的所有项目(andon_mps.id:andon_menu.id):", dic_id)
+        print("满足当前条件的所有项目(andon_mps.id:andon_menu.id):", dic_id)
 
         if len(dic_id) > 0:  # 如果存在数据
             # 获取andon_menu的id
@@ -114,12 +113,17 @@ class DataCollection:
                 else:  # 如果是最后一位
                     s += "id=%s" % list_id_menu[i]
             # SQL语句:获取dic_id中去重后的andon_menu.id对应的项目
-            sql = "SELECT id,project,production_line,product,ip FROM andon_menu WHERE " + s
+            # sql = "SELECT id,project,production_line,product,ip FROM andon_menu WHERE " + s
+            sql = "SELECT id,project,production_line,ip FROM andon_menu WHERE " + s  # 修改后的andon系统，删除了menu表的product字段
             # print('SQL:', sql)
             rows = self.select_query(sql)
             for row in rows:
-                dic_ip_menu[row[0]] = row[4]  # 将andon_menu.id 与 plc的IP对应起来
-                list_items.append((row[1]+row[2]+row[3], row[4]))
+                print(row)
+                # dic_ip_menu[row[0]] = row[4]  # 将andon_menu.id 与 plc的IP对应起来
+                dic_ip_menu[row[0]] = row[3]  # 将andon_menu.id 与 plc的IP对应起来  20200610修改后的andon系统，删除了menu表的product字段
+                print('测试')
+                # list_items.append((row[1]+row[2]+row[3], row[4]))
+                list_items.append((row[1]+row[2], row[3]))  #修改后的andon系统，删除了menu表的product字段
             # 将andon_mps.id 与 PLC的IP对应起来(即：将andon_menu.id替换为对应的andon_menu.ip，包括重复的andon_menu.id项）    
             dic_ip_mps = {key: dic_ip_menu[value] for key, value in dic_id.items()}
 
@@ -137,7 +141,6 @@ class DataCollection:
     # 去除重复项
     def remove_duplicates(self, dic_ip_mps={}, list_items=[]):
         print("进入remove_duplicates")
-        logging.info('进入remove_duplicates')
         list_duplicate_ip = [x for x in Counter(list(dic_ip_mps.values())) if list(dic_ip_mps.values()).count(x) > 1]
         list_unique_ip = [x for x in Counter(list(dic_ip_mps.values())) if list(dic_ip_mps.values()).count(x) == 1]
         list_items_duplicate = [(x[0], x[1]) for x in list_items if x[1] in list_duplicate_ip]
@@ -149,8 +152,7 @@ class DataCollection:
 
     # 项目归类（1、本次采集的所有项目的id；2、需要删除的项目的id；3、采集后留下的项目id--存放在list_id_old中，用于下次判断使用)
     def item_classify(self, dic_ip_old={}, dic_ip_now={}):
-        print("进入id_classify")
-        logging.info('进入id_classify')
+        print("进入item_classify")
         dic_plc_reset = {}  # 存储需要清零重置的项目
         dic_ip_last = {}    # 存储需要最后采集一次的项目
         
@@ -188,18 +190,21 @@ class DataCollection:
         
         # 采集后dic_ip_new存放在dic_ip_old中，用于下次判断使用
         dic_ip_old = dic_ip_now
+        print('dic_ip_old=%s, dic_plc_reset=%s, dic_ip_last=%s' %(dic_ip_old, dic_plc_reset, dic_ip_last))
         return dic_ip_old, dic_plc_reset, dic_ip_last
 
     # 采集PLC数据
     def data_collection(self, dic_id_ip={}):
-        print("进入last_data_collection")
-        logging.info('进入last_data_collection')
+        print("进入data_collection")
+        print('dic_id_ip=%s' %dic_id_ip)
         values = []  # 存储连接失败的PLC的ip
         dic_to_database = {}  # 存储需要采集的项目的数据，准备放入数据库。格式--key：value = andon_mps.id:plc的数据
         for key, value in dic_id_ip.items():
             siemens = SiemensS7Net(SiemensPLCS.S200Smart, value)
             # 建立PLC长连接
             if siemens.ConnectServer().IsSuccess:  # 连接成功，读取PLC的当前计数VW10, 并存入dic_to_database
+                # sql = "SELECT mps_info_id FROM andon_history WHERE mps_info_id=%s limit 1" % key  # 查询该key（mps_info_id）之前是否有记录
+                # rows = self.select_query(sql)
                 dic_to_database[key] = siemens.ReadInt16("DB1.10").Content
                 siemens.ConnectClose()  # 关闭PLC连接
             else:  # 若连接失败，则发送邮件至相关人员
@@ -208,22 +213,31 @@ class DataCollection:
         if len(values) > 0:
             self.plc_connect_failed(values)
         return dic_to_database
+        print('dic_to_database:', dic_to_database)
         
     # PLC清零
     def plc_reset(self, dic_plc_reset={}):
         print("进入plc_reset")
-        logging.info('进入plc_reset')
+        print('dic_plc_reset:', dic_plc_reset)
         plc_reset_count = len(dic_plc_reset)
         if plc_reset_count > 0:  # 若存在需要清零的PLC
             for key, value in dic_plc_reset.items():
                 siemens = SiemensS7Net(SiemensPLCS.S200Smart, value)  # 创建PLC实例
+                print("要清零的PLC的IP:", value)
                 if siemens.ConnectServer().IsSuccess:  # 若连接成功
                     while not siemens.ReadBool("M0.0").Content:  # 给M0.0赋值为True，直到成功
                         siemens.WriteBool("M0.0", True)  # 通知PLC清零
                         sleep(2)
                     while siemens.ReadBool("M0.0").Content:  # 如果置零信号成功发送，给M0.0赋值为False，直到成功
-                        siemens.WriteBool("M0.0", False)
-                        sleep(2)
+                        output = siemens.ReadInt16("DB1.10").Content
+                        if output < 10:  # 如果发送清零信号后，PLC数据清零(这里数据小于10就认为清零成功)
+                            print("清零成功")
+                            siemens.WriteBool("M0.0", False)
+                            sleep(2)
+                        else: 
+                            print("%sPLC数据未清零，当前数值%s" % (value, output))
+                            logging.info("%sPLC数据未清零，当前数值%s" % (value, output))
+                            sleep(5)
                     siemens.ConnectClose()  # 关闭PLC连接
                 else:  # 建立PLC长连接失败，发送邮件至相关人员
                     self.plc_connect_failed(value)
@@ -233,13 +247,13 @@ class DataCollection:
     # 将采集的数据存储到数据库中--数据包括末次采集项目，以及当前项目
     def data_save(self, data_to_database_last={}, data_to_database_now={}):
         print('进入data_save')
-        logging.info('进入data_save')
+        print('data_to_database_last=%s, data_to_database_now=%s' %(data_to_database_last, data_to_database_now))
         # 合并，得到所有需要保存的数据
         data_to_database = {** data_to_database_last, **data_to_database_now}
         if len(data_to_database) > 0:  # 若存在需要存储的数据
             sql = 'INSERT INTO andon_history (mps_info_id, actual_outputs, input_datetime) VALUES '
             for key, value in data_to_database.items():
-                sql += "(%s, %s, now()), " % (key, value)  # 这里的", "不能去掉，因为如果有多个的数据，则需要分割开来.now()表示使用系统当前时间
+                sql += "(%s, %s, now()), " % (key, value)  # 这里的", "不能去掉，因为如果有多个的数据，则需要分割开来。now()表示使用系统当前时间
             sql = sql[:-2]  # 去掉sql的末尾的两位(一个","和一个" ")
             print(sql)
             self.insert_query(sql)
